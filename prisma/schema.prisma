@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,25 +8,63 @@ datasource db {
 }
 
 model Users {
-  id             Int       @id @default(autoincrement()) @map("id")
-  name           String    @map("name")
-  username       String    @unique @map("username")
-  password       String    @map("password")
-  whatsapp       String?   @db.VarChar(20) @map("whatsapp") 
-  balance        Int       @map("balance")
-  role           String    @db.VarChar(20) @map("role") 
-  otp            String?   @db.VarChar(6) @map("otp") 
-  apiKey         String?   @map("api_key")
-  createdAt      DateTime? @default(now()) @map("created_at")
-  updatedAt      DateTime? @updatedAt @map("updated_at")
-  lastPaymentAt  DateTime? @map("last_payment_at")
-  token          String?   
-  sessions    Session[]
-
-  @@index([username, balance]) 
+  id                   Int       @id @default(autoincrement()) @map("id")
+  name                 String    @map("name")
+  username             String    @unique @map("username")
+  email                String?   @unique @map("email")
+  password             String    @map("password")
+  whatsapp             String?   @db.VarChar(20) @map("whatsapp")
+  balance              Int       @default(0) @map("balance")
+  role                 String    @db.VarChar(20) @default("user") @map("role")
+  
+  // Autentikasi & Keamanan
+  otp                  String?   @db.VarChar(6) @map("otp")
+  otpExpires           DateTime? @map("otp_expires")
+  apiKey               String?   @map("api_key")
+  token                String?
+  isVerified           Boolean   @default(false) @map("is_verified")
+  isEmailVerified      Boolean   @default(false) @map("is_email_verified")
+  verificationToken    String?   @map("verification_token")
+  resetPasswordToken   String?   @map("reset_password_token")
+  resetPasswordExpires DateTime? @map("reset_password_expires")
+  
+  // Login & Keamanan
+  failedLoginAttempts  Int       @default(0) @map("failed_login_attempts")
+  lastLoginAt          DateTime? @map("last_login_at")
+  isLocked             Boolean   @default(false) @map("is_locked")
+  lockedUntil          DateTime? @map("locked_until")
+  status               String    @default("active") @map("status") // active, suspended, banned
+  
+  // 2FA
+  isTwoFactorEnabled   Boolean   @default(false) @map("is_two_factor_enabled")
+  twoFactorSecret      String?   @map("two_factor_secret")
+  
+  // Sosial Auth
+  provider             String?   @map("provider") 
+  providerId           String?   @map("provider_id")
+  
+  // Timestamp
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime? @updatedAt @map("updated_at")
+  lastPaymentAt        DateTime? @map("last_payment_at")
+  
+  // Preferensi
+  receiveNotifications Boolean   @default(true) @map("receive_notifications")
+  language             String    @default("id") @map("language")
+  
+  // Relasi
+  sessions             Session[]
+  
+  // Indeks
+  @@index([username, balance])
   @@index([role, balance])
-  @@index([whatsapp, otp]) 
+  @@index([whatsapp, otp])
   @@index([username, role, whatsapp])
+  @@index([email, status])
+  @@index([providerId, provider])
+  @@index([resetPasswordToken])
+  @@index([verificationToken])
+  
   @@map("users")
 }
 
@@ -37,6 +74,8 @@ model Session {
   token       String    @unique @map("token")
   ipAddress   String?   @map("ip_address")
   userAgent   String?   @map("user_agent")
+  device      String?   @map("device")
+  location    String?   @map("location")
   isValid     Boolean   @default(true) @map("is_valid")
   expiresAt   DateTime  @map("expires_at")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -44,7 +83,7 @@ model Session {
   lastUsedAt  DateTime? @map("last_used_at")
   
   user        Users     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  
   @@index([userId])
   @@index([token])
   @@index([isValid, expiresAt])
@@ -53,5 +92,54 @@ model Session {
   @@map("sessions")
 }
 
+model LoginAttempt {
+  id          Int       @id @default(autoincrement()) @map("id")
+  username    String    @map("username")
+  email       String?   @map("email")
+  ipAddress   String    @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  successful  Boolean   @default(false) @map("successful")
+  reason      String?   @map("reason")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  @@index([username, successful])
+  @@index([ipAddress, createdAt])
+  @@index([email, successful])
+  
+  @@map("login_attempts")
+}
 
+model VerificationCode {
+  id          Int       @id @default(autoincrement()) @map("id")
+  userId      Int       @map("user_id")
+  code        String    @map("code")
+  type        String    @map("type") // email, phone, password_reset
+  isUsed      Boolean   @default(false) @map("is_used")
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  usedAt      DateTime? @map("used_at")
+  
+  @@index([userId, type])
+  @@index([code, isUsed])
+  @@index([expiresAt])
+  
+  @@map("verification_codes")
+}
 
+model AccessToken {
+  id            Int       @id @default(autoincrement()) @map("id")
+  userId        Int       @map("user_id")
+  name          String    @map("name") // Untuk mengidentifikasi tujuan token
+  token         String    @unique @map("token")
+  scope         String?   @map("scope") // Hak akses yang diberikan
+  expiresAt     DateTime? @map("expires_at") // null berarti tidak pernah kedaluwarsa
+  lastUsedAt    DateTime? @map("last_used_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  isRevoked     Boolean   @default(false) @map("is_revoked")
+  
+  @@index([userId])
+  @@index([token])
+  @@index([isRevoked, expiresAt])
+  
+  @@map("access_tokens")
+}
