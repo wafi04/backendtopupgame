@@ -1,0 +1,57 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL_MAIN")
+}
+
+model Users {
+  id             Int       @id @default(autoincrement()) @map("id")
+  name           String    @map("name")
+  username       String    @unique @map("username")
+  password       String    @map("password")
+  whatsapp       String?   @db.VarChar(20) @map("whatsapp") 
+  balance        Int       @map("balance")
+  role           String    @db.VarChar(20) @map("role") 
+  otp            String?   @db.VarChar(6) @map("otp") 
+  apiKey         String?   @map("api_key")
+  createdAt      DateTime? @default(now()) @map("created_at")
+  updatedAt      DateTime? @updatedAt @map("updated_at")
+  lastPaymentAt  DateTime? @map("last_payment_at")
+  token          String?   
+  sessions    Session[]
+
+  @@index([username, balance]) 
+  @@index([role, balance])
+  @@index([whatsapp, otp]) 
+  @@index([username, role, whatsapp])
+  @@map("users")
+}
+
+model Session {
+  id          Int       @id @default(autoincrement()) @map("id")
+  userId      Int       @map("user_id")
+  token       String    @unique @map("token")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  isValid     Boolean   @default(true) @map("is_valid")
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  
+  user        Users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([isValid, expiresAt])
+  @@index([ipAddress, userAgent])
+  
+  @@map("sessions")
+}
+
+
+

@@ -1,0 +1,75 @@
+services:
+  main_db:
+    image: postgres:15
+    container_name: main_db
+    environment:
+      POSTGRES_DB: main_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - pg_main_data:/var/lib/postgresql/data
+      - ./scripts/primary-setup.sh:/docker-entrypoint-initdb.d/primary-setup.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  replica_db:
+    image: postgres:15
+    container_name: replica_db
+    environment:
+      POSTGRES_DB: replica_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg_replica_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - app_network
+    depends_on:
+      main_db:
+        condition: service_healthy
+    command: |
+      bash -c "
+      echo 'Waiting for main_db to be ready...'
+      until PGPASSWORD=postgres psql -h main_db -U postgres -c 'SELECT 1' >/dev/null 2>&1; do
+        echo 'Waiting for main_db...'
+        sleep 3
+      done
+      
+      echo 'Main DB is available, checking data directory...'
+      
+      # Check if this is first start or if data directory is empty
+      if [ -z \"$(ls -A /var/lib/postgresql/data 2>/dev/null)\" ] || [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+        echo 'Data directory is empty, initializing replica from main_db'
+        rm -rf /var/lib/postgresql/data/* 2>/dev/null || true
+        
+        # Take base backup from primary (remove -C option)
+        PGPASSWORD=postgres pg_basebackup -h main_db -p 5432 -U postgres -D /var/lib/postgresql/data -P -v -R -X stream
+        
+        # Configure as standby
+        echo \"primary_conninfo = 'host=main_db port=5432 user=postgres password=postgres application_name=replica1'\" >> /var/lib/postgresql/data/postgresql.auto.conf
+        echo \"primary_slot_name = 'replica_slot_1'\" >> /var/lib/postgresql/data/postgresql.auto.conf
+        touch /var/lib/postgresql/data/standby.signal
+      else
+        echo 'Data directory already contains PostgreSQL data'
+      fi
+      
+      # Start PostgreSQL
+      exec docker-entrypoint.sh postgres
+      "
+
+volumes:
+  pg_main_data:
+  pg_replica_data:
+
+networks:
+  app_network:
+    driver: bridge
