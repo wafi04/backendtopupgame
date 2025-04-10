@@ -16,7 +16,7 @@ model Users {
   whatsapp             String?   @db.VarChar(20) @map("whatsapp")
   balance              Int       @default(0) @map("balance")
   role                 String    @db.VarChar(20) @default("user") @map("role")
-  
+  is_deleted          Boolean  @default(false)
   // Autentikasi & Keamanan
   otp                  String?   @db.VarChar(6) @map("otp")
   otpExpires           DateTime? @map("otp_expires")
